@@ -1,0 +1,22 @@
+name: Container checks
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check launcher syntax
+        run: bash -n flash-shell.sh
+      - name: Build flashing image
+        run: podman build -t localhost/libreecho-flasher -f Containerfile .
+      - name: Check tools without USB access
+        run: |
+          podman run --rm localhost/libreecho-flasher bash -euc '
+            command -v adb fastboot curl python3 mke2fs dumpe2fs lsusb
+            bash -n /usr/local/bin/run-one-shot.sh
+          '

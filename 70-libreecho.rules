@@ -1,0 +1,4 @@
+# Fastboot: documented Echo 2nd Gen USB identity (confirm with lsusb on your unit).
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="0bb4", ATTR{idProduct}=="0c01", GROUP="plugdev", MODE="0660"
+# LibreEcho ADB: tools/mt8163-arm32/initramfs/libreecho-init in LibreEcho-Platform.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="18d1", ATTR{idProduct}=="d001", GROUP="plugdev", MODE="0660"

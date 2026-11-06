@@ -1,0 +1,24 @@
+# Local installer state, ADB credentials, and shell history.
+/.installer-home/
+/.android/
+/.ssh/
+/downloads/
+/backups/
+
+# Device logs, diagnostic bundles, and downloaded firmware/unlock archives.
+*.log
+*.zip
+*.tar
+*.tar.gz
+*.img
+*.bin
+
+# Local credentials must never be added to a flashing repository.
+.env
+.env.*
+*.key
+*.pem
+adbkey*
+
+# Local download of the wrapper (the image fetches its pinned copy).
+/run-one-shot.sh
