@@ -60,11 +60,12 @@ flash)
     container bash -c '
         set -euo pipefail
         fb=(fastboot); [[ $3 == auto ]] || fb+=(-s "$3")
-        product=$("${fb[@]}" getvar product 2>&1 | sed -n "s/^product: *//p")
+        out=$("${fb[@]}" getvar product 2>&1) || true
+        product=$(sed -n "s/^product: *//p" <<<"$out")
         case $product in
             BISCUIT) zip=/work/amonet-biscuit-v2.0.0.zip ;;
             RADAR)   zip=/work/amonet-radar-v1.0.0.zip ;;
-            *) echo "ERROR: unexpected product \"$product\"; stopping" >&2; exit 2 ;;
+            *) echo "ERROR: unexpected product \"$product\"; stopping. fastboot said: $out" >&2; exit 2 ;;
         esac
         echo "Detected $product."
         args=(latest --fastboot-serial "$3" --slots both --execute-hardware)
