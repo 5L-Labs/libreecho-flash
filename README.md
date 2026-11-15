@@ -6,10 +6,37 @@ An unofficial convenience wrapper: no firmware build, daemon, speech services,
 or automatic flashing. Read the upstream hardware and installation instructions
 before connecting or erasing a device.
 
+Maintained by **5L Labs**, licensed under [MIT](LICENSE). This is independent
+community tooling, not the official LibreEcho-Platform repository. We intend to
+offer the minimal container workflow upstream; until it is accepted, this
+repository remains the standalone home. Upstream adoption would become the
+preferred entry point rather than a second, diverging installer.
+
 **No Amonet archive, firmware, device keys, or installer state is distributed
 with this repository or image.** Locked-device users supply their own exact
 upstream-required unlock archive at runtime; it is excluded from Git and the
 container build context.
+
+## USB flashing architecture
+
+The Linux host owns USB permissions and runs rootless Podman. The disposable
+container supplies `adb`, `fastboot`, filesystem tools, and the pinned upstream
+bootstrap wrapper. USB fastboot handles installation; after reboot, USB ADB
+handles verification and the loopback-only setup forward. No network connection
+to the Echo, speech model, Hermes service, or firmware compilation is needed.
+Internet access is needed to build the image and download the release.
+
+- **Image/build context:** only `Containerfile`; no downloaded ZIP, local
+  configuration, or installer state is copied into the image.
+- **Runtime:** the host's USB bus and this working directory are mounted into
+  the container. The user-supplied Amonet ZIP is read from `/work` only when
+  required; logs and recovery state stay in that local directory.
+- **Trust:** rootless privileged mode is not a sandbox for untrusted installers.
+  The container has the host user's USB access and write access to `/work`.
+  USB permissions may need one-time administrator setup; flashing does not.
+- **Destructive boundary:** opening the shell does not flash. The upstream
+  installer requires the explicit `--execute-hardware` command below and erases
+  userdata. Keep its original state and immutable release tag for continuation.
 
 ## Linux prerequisites
 
@@ -40,7 +67,7 @@ Clone this repository, open its directory, and check USB permissions below
 before connecting the device:
 
 ```sh
-git clone https://github.com/NickJLange/libreecho-flash.git
+git clone https://github.com/5L-Labs/libreecho-flash.git
 cd libreecho-flash
 ./flash-shell.sh
 ```
@@ -56,7 +83,8 @@ and host networking for simple hotplug support. It cannot bypass your host user'
 device permissions. `--group-add keep-groups` with `crun` preserves access through
 your host groups. Use only trusted installer code and disconnect unrelated
 flashable devices. A separate ADB server port (5038) avoids sharing the host's
-usual ADB server (5037).
+usual ADB server (5037). Privileged Podman may also expose other host devices
+accessible to your user; the USB bind mount is not a device-isolation boundary.
 
 ## USB permissions
 
@@ -121,13 +149,61 @@ fastboot getvar product
 Expected product: `BISCUIT` for Dot 2nd Gen, `RADAR` for Echo 2nd Gen. Stop on a
 mismatch; do not force a target override.
 
+## Obtain and verify Amonet (locked devices only)
+
+The name is **Amonet**. For our **Echo Dot 2nd Gen / biscuit** pilot, the exact
+archive was `amonet-biscuit-v2.0.0.zip`. Obtain it yourself from the author's
+[XDA thread](https://xdaforums.com/t/unlock-root-twrp-unbrick-amazon-echo-dot-2nd-gen-2016-biscuit.4761416/),
+using its [2.0.0 attachment](https://xdaforums.com/attachments/amonet-biscuit-v2-0-0-zip.6383906/).
+If the link moves, search Google for
+`"amonet-biscuit-v2.0.0.zip" "Rortiz2" site:xdaforums.com` and locate the author's
+post, not a repackaged mirror. Search results and filenames are not verification.
+Credit for the unlock work belongs to Roger Ortiz / R0rt1z2 and k4y0z.
+
+**The thread now advertises 2.0.1; do not substitute it for LibreEcho's pinned
+2.0.0.** Follow the selected LibreEcho release's requirements, not the forum's
+independent unlock/FireOS installation procedure. Keep the ZIP unmodified beside
+this README; do not extract it or run its shell scripts yourself. Neither this
+project nor LibreEcho redistributes the archive.
+
+The [LibreEcho Amonet pins](https://github.com/aslater3/LibreEcho/blob/main/release/amonet-pins.json)
+record the expected archive size and **SHA-256**, which the installer enforces.
+The Dot pilot ZIP is **55,989,416 bytes**. Before flashing, run from this directory
+on the Linux host (or `/work` inside the container):
+
+```sh
+test "$(stat -c %s amonet-biscuit-v2.0.0.zip)" = 55989416 &&
+printf '%s  %s\n' \
+  '98297293701082bc7272efe077f941c56fc7b6e1f27ef6f2e93b6e4c6fc7b62d' \
+  'amonet-biscuit-v2.0.0.zip' | sha256sum --check
+```
+
+Require a successful exit and `amonet-biscuit-v2.0.0.zip: OK`. A size or digest
+mismatch means **stop**, not rename the file, override the check, or flash anyway.
+
+For an additional comparison, the **SHA-512 computed from our exact pilot ZIP**
+is below. This is a secondary local fingerprint, not an upstream SHA-512
+signature or the algorithm the installer used:
+
+```sh
+printf '%s  %s\n' \
+  'ba4193de04ab376bfbfadb748c2af5931ca4dd6dc89cde4ad095cccd56aa98f99f84c815f77ff8836e91f0df8e3fefc9f8de859ec5a4e7dd2996befee5f973eb' \
+  'amonet-biscuit-v2.0.0.zip' | sha512sum --check
+```
+
+These checks establish byte-for-byte agreement with the recorded archive, not
+independent publisher authentication or hardware compatibility. The wrapper
+also verifies the release installer, and the installer verifies the release
+assets and selected unlock payload. Do not mix releases or bypass those checks.
+
+For **Echo 2nd Gen / radar**, obtain `amonet-radar-v1.0.0.zip` using upstream's
+model-specific requirements and pins. The biscuit links and checksums above
+must not be used for radar. An already-unlocked device needs no Amonet ZIP.
+
 ## Flash (explicit, destructive)
 
-**This erases device userdata.** For a locked/stock device, obtain the exact
-upstream-required Amonet ZIP yourself and place it beside this README. Neither
-this project nor LibreEcho redistributes it. Follow the upstream archive/version
-requirements; do not use an arbitrary replacement. For a **Dot 2nd Gen**, run
-inside the container:
+**This erases device userdata.** Verify the target product and any required
+archive first. For a **Dot 2nd Gen**, run inside the container:
 
 ```sh
 run-one-shot.sh latest --amonet-zip /work/amonet-biscuit-v2.0.0.zip \
@@ -150,6 +226,32 @@ ssh -N -L 18080:127.0.0.1:18080 USER@USB_HOST
 
 Then open `http://127.0.0.1:18080/setup.html` in your browser. Substitute your SSH
 username and the USB host's address; no public setup port is exposed.
+
+## Verify the installation
+
+Before writing, require the rootless check to print `true`, confirm your user's
+USB read/write permissions, check `fastboot getvar product`, and verify the
+archive above if the device is locked. The wrapper's installer-checksum check
+is a separate mandatory gate; do not continue after any failed check.
+
+After writing, require the upstream installer to finish successfully, including
+its boot readback verification and feature staging. Keep the printed immutable
+release tag and reviewed logs locally. While the container is still open:
+
+```sh
+adb devices
+adb shell uname -r
+```
+
+The target must appear in ADB as `device`, not `unauthorized` or `offline`, and
+respond to the shell command. Then use the forwarded setup page above, complete
+setup, and confirm the expected LibreEcho release and device model in its UI.
+These are separate checks: a container build proves tool availability, a matching
+ZIP proves archive identity, and only a real completed install checks the
+hardware path. None alone proves long-term reliability.
+
+If installation stops, retain state and follow the continuation procedure below;
+do not rerun a destructive installation just to obtain a clean success message.
 
 ## State and recovery
 
