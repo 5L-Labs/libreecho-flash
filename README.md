@@ -2,8 +2,9 @@
 
 [5L Labs](https://github.com/5L-Labs) community tooling, [MIT](LICENSE).
 Flash Echo/Dot **2nd Gen** using the [upstream installer](https://github.com/aslater3/LibreEcho/blob/main/docs/install/README.md).
-Read its wiring/safety instructions first. No firmware build, bundled payloads
-or automatic flashing. The container and guide were adopted upstream in LibreEcho
+Read its wiring/safety instructions first. No firmware build or bundled payloads;
+nothing flashes until you run `./setup.sh flash` (or the installer) and confirm
+the erase. The container and guide were adopted upstream in LibreEcho
 0.14.6 ([`docs/install/podman.md`](https://github.com/aslater3/LibreEcho/blob/release/0.14.6/docs/install/podman.md),
 [`tools/flash-container`](https://github.com/aslater3/LibreEcho/tree/release/0.14.6/tools/flash-container));
 use that for plain flashing. This repo adds `setup.sh` on top (its image also
