@@ -33,9 +33,13 @@ sudo install -m 0644 70-libreecho.rules /etc/udev/rules.d/70-libreecho.rules
 sudo udevadm control --reload-rules
 ```
 
-Log out/in; reconnect safely. Rules cover known `0bb4:0c01` fastboot and
-`18d1:d001` LibreEcho ADB, not every recovery image or individual serial.
-Inspect unfamiliar IDs; never grant all-USB/world-writable access.
+Log out/in; reconnect safely. Known IDs:
+
+- `0bb4:0c01` fastboot: [stock Echo](https://github.com/HuskerMinion/techo5-dot/blob/main/docs/hardware-radar.md), [unlocked Dot](https://github.com/wilbowes/EchoMuse/issues/697).
+- `18d1:d001` LibreEcho ADB: [init source](https://github.com/aslater3/LibreEcho-Platform/blob/main/tools/mt8163-arm32/initramfs/libreecho-init).
+
+Not serial-isolated; recovery IDs may differ. Inspect unfamiliar IDs; never grant
+all-USB/world-writable access.
 
 ## Container
 
@@ -137,5 +141,15 @@ run-one-shot.sh radar-puffin-vX.Y.Z --continue --fastboot-serial SERIAL \
 ```
 
 Replace placeholders with saved values. `--reinstall` intentionally erases again.
-[CI](.github/workflows/container.yml) checks tools without USB; it does not prove
-permissions or hardware compatibility.
+
+## Checks without flashing
+
+```sh
+bash -n flash-shell.sh
+podman build -t localhost/libreecho-flasher -f Containerfile .
+podman run --rm localhost/libreecho-flasher bash -euc \
+  'command -v adb fastboot curl python3 mke2fs dumpe2fs lsusb; bash -n /usr/local/bin/run-one-shot.sh'
+```
+
+[CI](.github/workflows/container.yml) runs these checks without USB; they do not
+prove permissions or hardware compatibility.
