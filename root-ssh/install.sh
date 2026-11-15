@@ -33,7 +33,7 @@ fi
 "${adb[@]}" shell "uname -m" | grep -q armv7 || { echo "ERROR: no armv7 LibreEcho device on ADB" >&2; exit 1; }
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-cat "$@" > "$tmp/authorized_keys"
+for key in "$@"; do cat "$key"; echo; done > "$tmp/authorized_keys"
 
 "${adb[@]}" shell "mkdir -p $dir/keys $svc && chmod 700 $dir $dir/keys && rm -rf $dir/root && mkdir $dir/root"
 "${adb[@]}" push "$build/dropbear.tgz" "$dir/dropbear.tgz" >/dev/null
@@ -44,5 +44,5 @@ cat "$@" > "$tmp/authorized_keys"
 "${adb[@]}" shell "chown -R 0:0 $dir $svc && chmod -R go-w $dir $svc && chmod 755 $svc/run \
     && chmod 600 $dir/keys/authorized_keys && touch /data/libreecho/local/enabled"
 # A server already running keeps reading the same key file, so a key change needs no restart.
-ip=$("${adb[@]}" shell "ip -4 addr show wlan0" | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)
+ip=$("${adb[@]}" shell "ip -4 addr show wlan0" | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1) || true
 echo "Installed. In a few seconds: ssh -p 2222 root@${ip:-<echo ip>}"

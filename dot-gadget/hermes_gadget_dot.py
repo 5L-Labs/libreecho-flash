@@ -311,7 +311,9 @@ class Device:
             started = time.monotonic()
             try:
                 await self.session()
-            except (OSError, WebSocketException, asyncio.TimeoutError, ValueError) as exc:
+            # KeyError, TypeError, AttributeError: a malformed frame ends only this upstream's session.
+            except (OSError, WebSocketException, asyncio.TimeoutError, ValueError,
+                    KeyError, TypeError, AttributeError) as exc:
                 log.warning("[%s] connection to %s ended: %s", self.upstream, self.cfg["server"], exc)
             if self.stream is not None:
                 self.writer.abort(self.stream)

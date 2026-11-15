@@ -22,6 +22,9 @@ Everything goes through `./setup.sh` (`./setup.sh help` lists it again):
 ./setup.sh --serial SERIAL logs     # pick one device when several are on USB
 ```
 
+`flash` automates the manual steps under "Flash and verify" below, which are what
+has been run on hardware so far; use those steps if `flash` misbehaves.
+
 ## Host and USB
 
 Native Linux, internet, direct data-capable USB. Debian/Ubuntu prerequisites
@@ -167,7 +170,7 @@ Replace placeholders with saved values. `--reinstall` intentionally erases again
 ## Checks without flashing
 
 ```sh
-bash -n setup.sh dot-gadget/install.sh dot-gadget/run root-ssh/install.sh
+for f in setup.sh dot-gadget/install.sh dot-gadget/run root-ssh/install.sh root-ssh/run; do bash -n "$f"; done
 python3 -m py_compile dot-gadget/hermes_gadget_dot.py
 podman build -t localhost/libreecho-flasher -f Containerfile .
 podman run --rm localhost/libreecho-flasher bash -euc \
@@ -193,7 +196,8 @@ With the device booted and on USB, outside the container (needs host `adb`,
 ./setup.sh speaker "Kitchen Echo" hermes-a=ws://HOST_A:PORT/gadget hermes-b=ws://HOST_B:PORT/gadget
 ```
 
-Each `NAME=URL` is one Hermes gateway's gadget endpoint. The device connects to
+Each `NAME=URL` is one Hermes gateway's gadget endpoint (`NAME`: letters, digits,
+`.`, `_`, `-`). The device connects to
 all of them, with **its own key and device id per upstream** (a shared key would
 let one Hermes impersonate the device to another), and prints a pairing code per
 upstream. Approve each on its Hermes host:
@@ -216,7 +220,8 @@ across reinstalls; rerun the command to change the name or upstreams.
 Logs: `./setup.sh logs`.
 
 The connection is plain `ws://` unless the gateway terminates TLS (`wss://`), so
-use it on a trusted network. To stop all local services remove
+use it on a trusted network. `wss://` verifies the gateway against the device's
+own CA bundle. To stop all local services remove
 `/data/libreecho/local/enabled`; to uninstall also remove
 `/data/libreecho/local/hermes-gadget` and `/data/libreecho/local/services/hermes-gadget`.
 
@@ -224,7 +229,9 @@ use it on a trusted network. To stop all local services remove
 
 LibreEcho's own SSH (port 22) accepts only passwords and never root, so changes
 under `/data/libreecho` otherwise need USB ADB. After `./setup.sh speaker` has
-run once (it fetches `apk`), add a second, key-only root SSH server:
+run once (it fetches `apk`), add a second, key-only root SSH server. It creates
+`/data/libreecho/local/enabled`, which starts **all** installed local services,
+including an installed speaker:
 
 ```sh
 ./setup.sh root-ssh ~/.ssh/id_ed25519.pub

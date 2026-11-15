@@ -20,7 +20,9 @@ upstreams=()
 for arg in "$@"; do
     case $arg in
         --enable) enable=--enable ;;
-        *=ws://*|*=wss://*) upstreams+=("$arg") ;;
+        *=ws://*|*=wss://*)
+            [[ ${arg%%=*} =~ ^[A-Za-z0-9._-]+$ ]] || { echo "upstream NAME may use only letters, digits, . _ -: ${arg%%=*}" >&2; exit 2; }
+            upstreams+=("$arg") ;;
         *) echo "$usage" >&2; exit 2 ;;
     esac
 done
@@ -29,19 +31,25 @@ here=$(cd "$(dirname "$0")" && pwd)
 build=$here/build
 adb=(adb -P "${ADB_PORT:-5038}" ${ADB_SERIAL:+-s "$ADB_SERIAL"})  # ADB_SERIAL picks one of several devices
 alpine=https://dl-cdn.alpinelinux.org/alpine/v3.24
+# The bootstrap apk and Alpine's signing keys are pinned by hash; apk then checks every
+# package signature against those keys. When Alpine replaces either file, update the pin.
+apk_tools=apk-tools-static-3.0.9-r0.apk
+apk_tools_sha256=0a1a0682375f66a83b7b903f6e4638ccfe312547d50d336b5f2be9fc391281be
+keys=alpine-keys-2.6-r0.apk
+keys_sha256=e8a4ee971ef1891fbdd48e7459d07996d83861e80a0a02223ebf48f5e76b759e
 app=/data/libreecho/local/hermes-gadget
 svc=/data/libreecho/local/services/hermes-gadget
 
 if [[ ! -f $build/py.tgz ]]; then
     rm -rf "$build" && mkdir -p "$build/root/etc/apk/keys"
-    apk_tools=$(curl -fsSL "$alpine/main/x86_64/" | grep -o 'apk-tools-static-[0-9][^"]*\.apk' | head -1)
-    keys=$(curl -fsSL "$alpine/main/armv7/" | grep -o 'alpine-keys-[0-9][^"]*\.apk' | head -1)
     curl -fsSL -o "$build/apk-tools.apk" "$alpine/main/x86_64/$apk_tools"
     curl -fsSL -o "$build/keys.apk" "$alpine/main/armv7/$keys"
-    mkdir "$build/apk" && tar -xzf "$build/apk-tools.apk" -C "$build/apk" 2>/dev/null || true
-    tar -xzf "$build/keys.apk" -C "$build/root" 2>/dev/null || true
+    printf '%s  %s\n' "$apk_tools_sha256" "$build/apk-tools.apk" "$keys_sha256" "$build/keys.apk" | sha256sum --check --quiet \
+        || { echo "ERROR: Alpine bootstrap files do not match the pinned hashes" >&2; exit 1; }
+    mkdir "$build/apk"
+    tar -xzf "$build/apk-tools.apk" -C "$build/apk" --warning=no-unknown-keyword
+    tar -xzf "$build/keys.apk" -C "$build/root" --warning=no-unknown-keyword
     cp "$build"/root/usr/share/apk/keys/armv7/*.pub "$build/root/etc/apk/keys/"
-    # apk verifies every package against those Alpine signing keys.
     "$build/apk/sbin/apk.static" --arch armv7 --root "$build/root" -X "$alpine/main" -X "$alpine/community" \
         --initdb --no-scripts --no-chown --usermode add python3 py3-websockets
     tar -czf "$build/py.tgz" -C "$build/root" .
@@ -72,7 +80,8 @@ if [[ $enable == --enable ]]; then
     # (It runs through ld-musl, so pidof can't find it: match the script in each cmdline, skipping this shell.)
     "${adb[@]}" shell "for d in /proc/[0-9]*; do [ \"\${d#/proc/}\" = \$\$ ] && continue; \
         grep -q hermes_gadget_dot.py \"\$d/cmdline\" 2>/dev/null && kill \"\${d#/proc/}\"; done; true"
-    echo "Enabled. Logs: adb -P ${ADB_PORT:-5038} shell tail -f /var/log/libreecho/local/hermes-gadget.log"
+    echo "Enabled. Logs: ${adb[*]} shell tail -f /var/log/libreecho/local/hermes-gadget.log"
 else
-    echo "Installed, not enabled. Start it with --enable, or try it in the foreground: adb -P ${ADB_PORT:-5038} shell $svc/run"
+    echo "Installed. A client already running keeps its old config until restarted; rerun with --enable to restart it."
+    echo "Foreground test: ${adb[*]} shell $svc/run"
 fi

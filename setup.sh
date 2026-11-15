@@ -10,7 +10,7 @@
 #   ./setup.sh logs                        follow the speaker log
 #   ./setup.sh root-ssh KEY.pub [...]      root SSH with these keys on port 2222, so USB isn't needed
 #
-# With several devices on USB, put --serial SERIAL before the command.
+# With several devices on USB, put --serial SERIAL before the command (the fastboot serial for flash).
 # Run as your normal user, not with sudo. See README.md for the details.
 set -euo pipefail
 
@@ -27,6 +27,7 @@ cmd=${1:-}; shift || true
 # Disposable rootless container with fastboot, adb and the pinned upstream installer.
 container() {
     mkdir -p "$here/.installer-home"
+    chmod 700 "$here/.installer-home"  # installer keys and state
     adb -P $ADB_PORT kill-server 2>/dev/null || true  # the container runs its own ADB server on this port
     podman build --quiet --network host -t localhost/libreecho-flasher -f "$here/Containerfile" "$here" >/dev/null
     # Mount the USB directory, not one device node: fastboot -> adb re-enumerates.
@@ -58,22 +59,23 @@ flash)
     # Inside the container: pick the Amonet unlock archive for the detected board, then run the installer.
     container bash -c '
         set -euo pipefail
-        product=$(fastboot getvar product 2>&1 | sed -n "s/^product: *//p")
+        fb=(fastboot); [[ $3 == auto ]] || fb+=(-s "$3")
+        product=$("${fb[@]}" getvar product 2>&1 | sed -n "s/^product: *//p")
         case $product in
             BISCUIT) zip=/work/amonet-biscuit-v2.0.0.zip ;;
             RADAR)   zip=/work/amonet-radar-v1.0.0.zip ;;
             *) echo "ERROR: unexpected product \"$product\"; stopping" >&2; exit 2 ;;
         esac
         echo "Detected $product."
-        args=(latest --fastboot-serial auto --slots both --execute-hardware)
+        args=(latest --fastboot-serial "$3" --slots both --execute-hardware)
         if [[ $1 == 0 ]]; then
             [[ -f $zip ]] || { echo "ERROR: put $(basename "$zip") in the repo (LibreEcho does not ship it)" >&2; exit 2; }
             args+=(--amonet-zip "$zip")
         fi
-        echo "Setup page: on your browser machine run  ssh -N -L 18080:127.0.0.1:18080 $USER@<this host>"
+        echo "Setup page: on your browser machine run  ssh -N -L 18080:127.0.0.1:18080 $2@<this host>"
         echo "then open http://127.0.0.1:18080/setup.html. WRITE DOWN the release tag and serial printed below."
         run-one-shot.sh "${args[@]}"
-    ' _ "$unlocked"
+    ' _ "$unlocked" "$(id -un)" "${serial:-auto}"
     ;;
 resume)
     [[ $# == 2 ]] || die "usage: ./setup.sh resume TAG SERIAL  (the tag and serial the failed flash printed)"
@@ -102,7 +104,7 @@ speaker)
     for _ in $(seq 20); do
         sleep 1
         since=$(adb -P $ADB_PORT -s "$serial" shell 'tail -50 /var/log/libreecho/local/hermes-gadget.log' \
-            | tr -d '\r' | awk '/hermes-gadget-dot .*upstream/ {buf = ""} {buf = buf $0 "\n"} END {printf "%s", buf}')
+            | tr -d '\r' | awk '/hermes-gadget-dot .*upstream/ {buf = ""} {buf = buf $0 "\n"} END {printf "%s", buf}') || true
         [[ $(grep -cE 'paired=|PAIRING CODE' <<<"$since") -ge $# ]] && break
     done
     grep -E 'PAIRING CODE|paired=' <<<"$since" || echo "  none yet; watch ./setup.sh logs"
