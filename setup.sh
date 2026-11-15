@@ -1,42 +1,26 @@
 #!/usr/bin/env bash
-# One entry point for preparing a LibreEcho Echo / Echo Dot 2nd Gen.
+# Turn a flashed LibreEcho Echo / Echo Dot 2nd Gen into a Hermes speaker, over USB ADB.
 #
-#   ./setup.sh flash [--unlocked]          flash a device in fastboot (ERASES it)
-#   ./setup.sh resume TAG SERIAL           continue a flash that failed after slots were written
-#   ./setup.sh shell                       open the flashing container by hand
 #   ./setup.sh devices                     list LibreEcho devices on USB (ADB)
 #   ./setup.sh speaker NAME UP=ws://... [UP=ws://...]
 #                                          make it a Hermes speaker (dot-gadget), started now and at boot
 #   ./setup.sh logs                        follow the speaker log
 #   ./setup.sh root-ssh KEY.pub [...]      root SSH with these keys on port 2222, so USB isn't needed
 #
-# With several devices on USB, put --serial SERIAL before the command (the fastboot serial for flash).
-# Run as your normal user, not with sudo. See README.md for the details.
+# With several devices on USB, put --serial SERIAL before the command.
+# Needs host adb, curl and python3. Flash first with LibreEcho's installer; see README.md.
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-export ADB_PORT=5038  # the flasher's own ADB server; leaves the host's usual 5037 alone
+# 5038 is the ADB server of LibreEcho's flashing container; it leaves the host's usual 5037 alone.
+export ADB_PORT=${ADB_PORT:-5038}
 
-usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
+usage() { sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 serial=
 if [[ ${1:-} == --serial ]]; then serial=${2:?--serial needs a value}; shift 2; fi
 cmd=${1:-}; shift || true
-
-# Disposable rootless container with fastboot, adb and the pinned upstream installer.
-container() {
-    mkdir -p "$here/.installer-home"
-    chmod 700 "$here/.installer-home"  # installer keys and state
-    adb -P $ADB_PORT kill-server 2>/dev/null || true  # the container runs its own ADB server on this port
-    podman build --quiet --network host -t localhost/libreecho-flasher -f "$here/Containerfile" "$here" >/dev/null
-    # Mount the USB directory, not one device node: fastboot -> adb re-enumerates.
-    # Host networking keeps the installer's loopback-only setup page (port 18080) reachable.
-    podman run --rm -it --runtime crun --group-add keep-groups --privileged --network host \
-        --env ANDROID_ADB_SERVER_PORT=$ADB_PORT \
-        --volume /dev/bus/usb:/dev/bus/usb --volume "$here:/work" \
-        localhost/libreecho-flasher "$@"
-}
 
 # The one LibreEcho device to talk to over ADB (or --serial).
 pick_device() {
@@ -50,41 +34,6 @@ pick_device() {
 }
 
 case $cmd in
-flash)
-    unlocked=0
-    [[ ${1:-} == --unlocked ]] && unlocked=1
-    lsusb | grep -q '0bb4:0c01' || die "no Echo in fastboot (0bb4:0c01). Unplug it, hold Action (stock) or
-       Volume Down (already unlocked), and plug it in while holding."
-    echo "This ERASES the device. Ctrl-C now to stop, Enter to go on."; read -r
-    # Inside the container: pick the Amonet unlock archive for the detected board, then run the installer.
-    container bash -c '
-        set -euo pipefail
-        fb=(fastboot); [[ $3 == auto ]] || fb+=(-s "$3")
-        out=$("${fb[@]}" getvar product 2>&1) || true
-        product=$(sed -n "s/^product: *//p" <<<"$out")
-        case $product in
-            BISCUIT) zip=/work/amonet-biscuit-v2.0.0.zip ;;
-            RADAR)   zip=/work/amonet-radar-v1.0.0.zip ;;
-            *) echo "ERROR: unexpected product \"$product\"; stopping. fastboot said: $out" >&2; exit 2 ;;
-        esac
-        echo "Detected $product."
-        args=(latest --fastboot-serial "$3" --slots both --execute-hardware)
-        if [[ $1 == 0 ]]; then
-            [[ -f $zip ]] || { echo "ERROR: put $(basename "$zip") in the repo (LibreEcho does not ship it)" >&2; exit 2; }
-            args+=(--amonet-zip "$zip")
-        fi
-        echo "Setup page: on your browser machine run  ssh -N -L 18080:127.0.0.1:18080 $2@<this host>"
-        echo "then open http://127.0.0.1:18080/setup.html. WRITE DOWN the release tag and serial printed below."
-        run-one-shot.sh "${args[@]}"
-    ' _ "$unlocked" "$(id -un)" "${serial:-auto}"
-    ;;
-resume)
-    [[ $# == 2 ]] || die "usage: ./setup.sh resume TAG SERIAL  (the tag and serial the failed flash printed)"
-    container run-one-shot.sh "$1" --continue --fastboot-serial "$2" --slots both --execute-hardware
-    ;;
-shell)
-    container bash
-    ;;
 devices)
     adb -P $ADB_PORT devices | awk 'NR > 1 && $2 == "device" {print $1}' | while read -r s; do
         info=$(adb -P $ADB_PORT -s "$s" shell 'ip -4 addr show wlan0 | sed -n "s/.*inet \([0-9.]*\).*/\1/p";

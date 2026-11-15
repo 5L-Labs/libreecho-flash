@@ -1,3 +1,0 @@
-# This image downloads its inputs; no workspace files belong in its build context.
-**
-!Containerfile
