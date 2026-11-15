@@ -1,0 +1,7 @@
+#!/bin/sh
+# libreecho-local service: the Hermes Gadget client, on the Alpine Python in $APP/py.
+APP=/data/libreecho/local/hermes-gadget
+PY=$APP/py
+exec "$PY/lib/ld-musl-armhf.so.1" --library-path "$PY/lib:$PY/usr/lib" \
+    "$PY/usr/bin/python3" -I -u "$APP/hermes_gadget_dot.py" \
+    --config "$APP/config.json" --state "$APP/state" "$@"

@@ -16,9 +16,14 @@
 # Local credentials must never be added to a flashing repository.
 .env
 .env.*
+*.env
 *.key
 *.pem
 adbkey*
 
 # Local download of the wrapper (the image fetches its pinned copy).
 /run-one-shot.sh
+
+# Build outputs of the on-device installers.
+dot-gadget/build/
+__pycache__/

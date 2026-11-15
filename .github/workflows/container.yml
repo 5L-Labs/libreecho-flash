@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check launcher syntax
-        run: bash -n flash-shell.sh
+        run: bash -n setup.sh dot-gadget/install.sh dot-gadget/run && python3 -m py_compile dot-gadget/hermes_gadget_dot.py
       - name: Build flashing image
         run: podman build -t localhost/libreecho-flasher -f Containerfile .
       - name: Check tools without USB access

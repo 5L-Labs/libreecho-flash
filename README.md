@@ -4,6 +4,22 @@
 Flash Echo/Dot **2nd Gen** using the [upstream installer](https://github.com/aslater3/LibreEcho/blob/main/docs/install/README.md).
 Read its wiring/safety instructions first. No firmware build, bundled payloads
 or automatic flashing. Upstream adoption is proposed; this remains the fallback.
+Optionally, turn a flashed device into a [Hermes](https://github.com/NousResearch/hermes-agent)
+speaker that one or more Hermes agents can talk through.
+
+## Quick reference
+
+Everything goes through `./setup.sh` (`./setup.sh help` lists it again):
+
+```sh
+./setup.sh flash [--unlocked]       # device in fastboot: check Dot/Echo, flash (ERASES it)
+./setup.sh resume TAG SERIAL        # continue a flash that failed after slots were written
+./setup.sh shell                    # flashing container by hand
+./setup.sh devices                  # LibreEcho devices on USB: serial, Wi-Fi IP, "speaker" if set up
+./setup.sh speaker "Kitchen Echo" hermes=ws://HERMES_HOST:PORT/gadget   # Hermes speaker
+./setup.sh logs                     # follow the speaker log
+./setup.sh --serial SERIAL logs     # pick one device when several are on USB
+```
 
 ## Host and USB
 
@@ -43,10 +59,11 @@ all-USB/world-writable access.
 
 ## Container
 
-Open the shell:
+`./setup.sh flash`, `resume` and `shell` build the image (cached afterwards) and
+run it in a disposable container. Open the shell by hand:
 
 ```sh
-./flash-shell.sh
+./setup.sh shell
 ```
 
 Host permissions gate USB; fastboot flashes, ADB verifies and forwards setup.
@@ -94,7 +111,11 @@ need no ZIP. Never bypass installer/release checks or mix inputs.
 
 Unplug power before moving wiring. Dot uses micro-USB; Echo uses bottom contacts
 and separate power. **No shorting.** Enter fastboot holding **Action** (stock)
-or **Volume Down only** (unlocked). Inside the container:
+or **Volume Down only** (unlocked).
+
+`./setup.sh flash` (or `flash --unlocked`) does the steps below: it stops unless
+the product is `BISCUIT` or `RADAR`, picks the matching ZIP and asks before
+erasing. By hand, inside `./setup.sh shell`:
 
 ```sh
 lsusb
@@ -132,12 +153,12 @@ Verify release/model during setup; don't expose the port publicly.
 Keep `/work`, including `.installer-home` keys/cache/state and logs/downloads;
 container removal preserves them. Never force-add or publish these ignored files,
 backups or unreviewed diagnostics. After writes, **continue rather than reflash**.
-Reopen `./flash-shell.sh` with the same directory/HOME, original immutable tag,
-serial and slots:
+Resume from the same directory/HOME with the original immutable tag and serial
+(it runs `run-one-shot.sh TAG --continue --fastboot-serial SERIAL --slots both
+--execute-hardware`):
 
 ```sh
-run-one-shot.sh radar-puffin-vX.Y.Z --continue --fastboot-serial SERIAL \
-  --slots both --execute-hardware
+./setup.sh resume radar-puffin-vX.Y.Z SERIAL
 ```
 
 Replace placeholders with saved values. `--reinstall` intentionally erases again.
@@ -145,7 +166,8 @@ Replace placeholders with saved values. `--reinstall` intentionally erases again
 ## Checks without flashing
 
 ```sh
-bash -n flash-shell.sh
+bash -n setup.sh dot-gadget/install.sh dot-gadget/run
+python3 -m py_compile dot-gadget/hermes_gadget_dot.py
 podman build -t localhost/libreecho-flasher -f Containerfile .
 podman run --rm localhost/libreecho-flasher bash -euc \
   'command -v adb fastboot curl python3 mke2fs dumpe2fs lsusb; bash -n /usr/local/bin/run-one-shot.sh'
@@ -153,3 +175,46 @@ podman run --rm localhost/libreecho-flasher bash -euc \
 
 [CI](.github/workflows/container.yml) runs these checks without USB; they do not
 prove permissions or hardware compatibility.
+
+## Hermes speaker (optional)
+
+`dot-gadget/` makes a flashed device a [Hermes Gadget](https://github.com/Adolanium/hermes-gadget-sdk)
+speaker, so Hermes can speak on it on demand: `send_message` to `gadget:<id>`,
+cron delivery, or the gadget home channel. Hermes renders speech with its own
+TTS and streams PCM; the client plays it on LibreEcho's announcement bus, which
+ducks music and waits for the device's own speech. No microphone or wake word
+is involved.
+
+With the device booted and on USB, outside the container (needs host `adb`,
+`curl` and `python3`):
+
+```sh
+./setup.sh speaker "Kitchen Echo" hermes-a=ws://HOST_A:PORT/gadget hermes-b=ws://HOST_B:PORT/gadget
+```
+
+Each `NAME=URL` is one Hermes gateway's gadget endpoint. The device connects to
+all of them, with **its own key and device id per upstream** (a shared key would
+let one Hermes impersonate the device to another), and prints a pairing code per
+upstream. Approve each on its Hermes host:
+
+```sh
+hermes pairing approve gadget CODE
+hermes gadget devices
+```
+
+Messages play one at a time in arrival order. A newer message from the same
+upstream replaces one that is still arriving, never one that has fully arrived;
+another upstream's message waits its turn. One message is capped at 600 s.
+
+It runs on a downloaded Alpine armv7 Python (musl, like LibreEcho; about 47 MB
+on `/data`, packages signature-checked by `apk`) under LibreEcho's
+`libreecho-local` supervisor, which survives reboots and OTA updates, restarts
+it with backoff, and disables local services after three boots that do not
+stay up for 180 s. Device keys stay in `/data/libreecho/local/hermes-gadget/state`
+across reinstalls; rerun the command to change the name or upstreams.
+Logs: `./setup.sh logs`.
+
+The connection is plain `ws://` unless the gateway terminates TLS (`wss://`), so
+use it on a trusted network. To stop all local services remove
+`/data/libreecho/local/enabled`; to uninstall also remove
+`/data/libreecho/local/hermes-gadget` and `/data/libreecho/local/services/hermes-gadget`.
