@@ -26,4 +26,5 @@ adbkey*
 
 # Build outputs of the on-device installers.
 dot-gadget/build/
+root-ssh/build/
 __pycache__/

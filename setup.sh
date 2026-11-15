@@ -8,6 +8,7 @@
 #   ./setup.sh speaker NAME UP=ws://... [UP=ws://...]
 #                                          make it a Hermes speaker (dot-gadget), started now and at boot
 #   ./setup.sh logs                        follow the speaker log
+#   ./setup.sh root-ssh KEY.pub [...]      root SSH with these keys on port 2222, so USB isn't needed
 #
 # With several devices on USB, put --serial SERIAL before the command.
 # Run as your normal user, not with sudo. See README.md for the details.
@@ -16,7 +17,7 @@ set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export ADB_PORT=5038  # the flasher's own ADB server; leaves the host's usual 5037 alone
 
-usage() { sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
+usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-2}"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
 serial=
@@ -105,6 +106,11 @@ speaker)
         [[ $(grep -cE 'paired=|PAIRING CODE' <<<"$since") -ge $# ]] && break
     done
     grep -E 'PAIRING CODE|paired=' <<<"$since" || echo "  none yet; watch ./setup.sh logs"
+    ;;
+root-ssh)
+    [[ $# -ge 1 ]] || die "usage: ./setup.sh root-ssh ~/.ssh/id_ed25519.pub [MORE.pub ...]"
+    pick_device
+    ADB_SERIAL=$serial "$here/root-ssh/install.sh" "$@"
     ;;
 logs)
     pick_device

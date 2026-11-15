@@ -1,0 +1,16 @@
+#!/bin/sh
+# libreecho-local service: a key-only root SSH server on port 2222, separate from LibreEcho's
+# password-only Dropbear on port 22. Keys: /data/libreecho/local/root-ssh/keys/authorized_keys.
+#
+# Alpine's musl Dropbear. It re-execs itself for every connection through the system's own
+# /lib/ld-musl-armhf.so.1, which only searches /lib, so its three extra libraries are linked
+# there at each start. The root filesystem is RAM: the links go away at reboot, nothing
+# persistent outside /data is changed.
+D=/data/libreecho/local/root-ssh
+R=$D/root
+for lib in libz.so.1 libutmps.so.0.1 libskarnet.so.2.15; do
+    [ -e "/lib/$lib" ] || ln -s "$R/usr/lib/$lib" "/lib/$lib"
+done
+[ -s "$D/hostkey" ] || /lib/ld-musl-armhf.so.1 "$R/usr/bin/dropbearkey" -t ed25519 -f "$D/hostkey" >/dev/null 2>&1
+exec /lib/ld-musl-armhf.so.1 "$R/usr/sbin/dropbear" -F -E -s -j -k -T 3 -p 0.0.0.0:2222 \
+    -r "$D/hostkey" -D "$D/keys" -P /run/root-ssh.pid

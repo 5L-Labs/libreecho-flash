@@ -18,6 +18,7 @@ Everything goes through `./setup.sh` (`./setup.sh help` lists it again):
 ./setup.sh devices                  # LibreEcho devices on USB: serial, Wi-Fi IP, "speaker" if set up
 ./setup.sh speaker "Kitchen Echo" hermes=ws://HERMES_HOST:PORT/gadget   # Hermes speaker
 ./setup.sh logs                     # follow the speaker log
+./setup.sh root-ssh KEY.pub         # key-only root SSH on port 2222, so the device can leave USB
 ./setup.sh --serial SERIAL logs     # pick one device when several are on USB
 ```
 
@@ -166,7 +167,7 @@ Replace placeholders with saved values. `--reinstall` intentionally erases again
 ## Checks without flashing
 
 ```sh
-bash -n setup.sh dot-gadget/install.sh dot-gadget/run
+bash -n setup.sh dot-gadget/install.sh dot-gadget/run root-ssh/install.sh
 python3 -m py_compile dot-gadget/hermes_gadget_dot.py
 podman build -t localhost/libreecho-flasher -f Containerfile .
 podman run --rm localhost/libreecho-flasher bash -euc \
@@ -218,3 +219,22 @@ The connection is plain `ws://` unless the gateway terminates TLS (`wss://`), so
 use it on a trusted network. To stop all local services remove
 `/data/libreecho/local/enabled`; to uninstall also remove
 `/data/libreecho/local/hermes-gadget` and `/data/libreecho/local/services/hermes-gadget`.
+
+## Root over the network (optional)
+
+LibreEcho's own SSH (port 22) accepts only passwords and never root, so changes
+under `/data/libreecho` otherwise need USB ADB. After `./setup.sh speaker` has
+run once (it fetches `apk`), add a second, key-only root SSH server:
+
+```sh
+./setup.sh root-ssh ~/.ssh/id_ed25519.pub
+ssh -p 2222 root@DEVICE_IP
+```
+
+It is Alpine's musl Dropbear for armv7 under the same `libreecho-local`
+supervisor, on port **2222**, **public keys only**, no port forwarding. Rerunning
+replaces the keys; a running server picks them up at once. Dropbear's three
+libraries are linked into the RAM-backed `/lib` at each start. Anyone holding a
+listed key is root on the device. To remove it, delete
+`/data/libreecho/local/services/root-ssh` and `/data/libreecho/local/root-ssh`,
+then reboot.
